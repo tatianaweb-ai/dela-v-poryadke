@@ -164,9 +164,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
     (async () => {
       try {
-        const [loadedProjects, loadedTasks] = await Promise.all([
-          fetchProjects(supabase),
-          fetchTasks(supabase),
+        // Без предела ожидания «зависшая» сеть выглядела бы вечной загрузкой.
+        // Лучше честная ошибка, которую можно повторить.
+        const timeout = new Promise<never>((_resolve, reject) => {
+          setTimeout(() => reject(new Error("Превышено время ожидания")), 15000);
+        });
+        const [loadedProjects, loadedTasks] = await Promise.race([
+          Promise.all([fetchProjects(supabase), fetchTasks(supabase)]),
+          timeout,
         ]);
         if (!active) return;
 
