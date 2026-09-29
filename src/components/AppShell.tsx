@@ -152,7 +152,7 @@ export function AppShell() {
       </main>
 
       <footer className="mx-auto w-full max-w-6xl px-4 pb-8 text-center text-xs text-slate-400 sm:px-6">
-        Дела в порядке · MVP · данные хранятся локально в вашем браузере
+        Дела в порядке · данные хранятся в базе и доступны только вам
       </footer>
 
       {taskModalOpen && (

@@ -150,8 +150,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const reportWriteError = useCallback((error: unknown) => {
     const owner = userIdRef.current;
     if (!owner) return;
-    const message = error instanceof Error ? error.message : "РќРµРёР·РІРµСЃС‚РЅР°СЏ РѕС€РёР±РєР°";
-    setLoadError({ userId: owner, message: `РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ: ${message}` });
+    const message = error instanceof Error ? error.message : "Неизвестная ошибка";
+    // В консоль браузера: всплывашка живёт несколько секунд, а причина нужна
+    // в логе сервера, где её можно прочитать целиком.
+    console.error("[db] не удалось сохранить:", message, error);
+    setLoadError({ userId: owner, message: `Не удалось сохранить: ${message}` });
   }, []);
 
   const dataError = loadError && loadError.userId === userId ? loadError.message : null;
