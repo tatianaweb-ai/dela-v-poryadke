@@ -13,7 +13,7 @@ import {
 
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { createSeedProjects, createSeedTasks } from "@/lib/seed";
-import { displayNameFromEmail } from "@/lib/supabase/auth";
+import { displayNameFromEmail, MAX_DISPLAY_NAME_LENGTH, MIN_DISPLAY_NAME_LENGTH } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/client";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
 import { createId, parseProjects, parseTasks } from "@/lib/validators";
@@ -25,8 +25,11 @@ interface AppStore {
   tasks: Task[];
   /** `false`, пока не прочитаны данные из хранилища и не проверена сессия. */
   isReady: boolean;
+  /** Человек вошёл, но ещё не назвал себя — показываем экран с именем. */
+  needsDisplayName: boolean;
   /** Просит Supabase отправить ссылку для входа. */
   requestMagicLink: (email: string) => Promise<{ ok: boolean; error?: string }>;
+  saveDisplayName: (name: string) => Promise<void>;
   signOut: () => Promise<void>;
   addProject: (draft: ProjectDraft) => Project;
   updateProject: (id: string, draft: ProjectDraft) => void;
@@ -40,6 +43,19 @@ interface AppStore {
 }
 
 const AppStoreContext = createContext<AppStore | null>(null);
+
+/**
+ * Достаёт имя из user_metadata. Возвращает null, если имя ещё не задано или
+ * содержит мусор — тогда приложение попросит его ввести.
+ */
+function readDisplayName(user: SupabaseUser | null): string | null {
+  const raw = user?.user_metadata?.display_name;
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return trimmed.length >= MIN_DISPLAY_NAME_LENGTH && trimmed.length <= MAX_DISPLAY_NAME_LENGTH
+    ? trimmed
+    : null;
+}
 
 /** Стабильные ссылки нужны, чтобы `initialValue` не менял идентичность на каждом рендере. */
 const NO_PROJECTS: Project[] = [];
@@ -87,18 +103,32 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return { ok: true };
   }, []);
 
+  const saveDisplayName = useCallback(async (name: string) => {
+    const supabase = createClient();
+    const { error } = await supabase.auth.updateUser({
+      data: { display_name: name.trim() },
+    });
+    if (error) throw new Error(error.message);
+  }, []);
+
   const signOut = useCallback(async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
   }, []);
 
+  // Имя живёт в user_metadata: изменяет его только владелец своей сессии,
+  // из кода приложения — никак.
+  const displayName = readDisplayName(authUser);
+
   const user = useMemo<User | null>(() => {
     if (!authUser?.email) return null;
     return {
-      name: displayNameFromEmail(authUser.email),
+      name: displayName ?? displayNameFromEmail(authUser.email),
       createdAt: authUser.created_at ?? new Date().toISOString(),
     };
-  }, [authUser]);
+  }, [authUser, displayName]);
+
+  const needsDisplayName = Boolean(authUser?.email) && !displayName;
 
   const isReady = projectStorage.isReady && taskStorage.isReady && isAuthReady;
 
@@ -207,7 +237,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       projects: projectStorage.value,
       tasks: taskStorage.value,
       isReady,
+      needsDisplayName,
       requestMagicLink,
+      saveDisplayName,
       signOut,
       addProject,
       updateProject,
@@ -224,7 +256,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       projectStorage.value,
       taskStorage.value,
       isReady,
+      needsDisplayName,
       requestMagicLink,
+      saveDisplayName,
       signOut,
       addProject,
       updateProject,

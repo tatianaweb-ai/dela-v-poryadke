@@ -1,3 +1,6 @@
+export const MIN_DISPLAY_NAME_LENGTH = 2;
+export const MAX_DISPLAY_NAME_LENGTH = 40;
+
 /**
  * Имя для приветствия берём из почты, пока пользователь не задал своё.
  * «anna.petrova@gmail.com» → «anna.petrova». Человечнее, чем пустая строка,

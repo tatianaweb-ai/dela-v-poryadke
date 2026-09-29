@@ -5,6 +5,7 @@ import { useState } from "react";
 import { AuthScreen } from "@/components/AuthScreen";
 import { Dashboard } from "@/components/Dashboard";
 import { Header } from "@/components/Header";
+import { NameSetupScreen } from "@/components/NameSetupScreen";
 import { ProjectList } from "@/components/ProjectList";
 import { ProjectModal } from "@/components/ProjectModal";
 import { TaskList } from "@/components/TaskList";
@@ -14,7 +15,8 @@ import { useAppStore } from "@/context/AppStore";
 import type { Project, ProjectDraft, Task, TaskDraft, ViewTab } from "@/types";
 
 export function AppShell() {
-  const { user, projects, tasks, addProject, updateProject, addTask, updateTask } = useAppStore();
+  const { user, projects, tasks, needsDisplayName, addProject, updateProject, addTask, updateTask } =
+    useAppStore();
   const toast = useToast();
 
   const [tab, setTab] = useState<ViewTab>("dashboard");
@@ -27,6 +29,7 @@ export function AppShell() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
 
   if (!user) return <AuthScreen />;
+  if (needsDisplayName) return <NameSetupScreen />;
 
   const handleOpenTaskCreate = () => {
     setEditingTask(null);
