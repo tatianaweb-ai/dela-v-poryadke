@@ -180,7 +180,10 @@ export async function deleteTaskRow(supabase: SupabaseClient, id: string): Promi
 export async function deleteAllUserData(supabase: SupabaseClient): Promise<void> {
   const { error } = await supabase.from("tasks").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   if (error) throw error;
-  const projectError = await supabase
+  // Здесь обязательно разбираем поле error: сам объект ответа при успехе
+  // не пустой (success: true, status: 204), и без разбора он всегда считался
+  // бы ошибкой — из-за чего заполнение базы демо-данными обрывалось.
+  const { error: projectError } = await supabase
     .from("projects")
     .delete()
     .neq("id", "00000000-0000-0000-0000-000000000000");
