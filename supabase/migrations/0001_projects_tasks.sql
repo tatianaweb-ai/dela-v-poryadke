@@ -9,7 +9,10 @@
 
 create table if not exists public.projects (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users (id) on delete cascade,
+  -- default auth.uid() — обязателен: клиент не передаёт user_id, иначе вставка
+  -- падала бы на NOT NULL. Подставляет сервер, поэтому подделать чужой id
+  -- невозможно даже вручную.
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
   name text not null check (char_length(trim(name)) between 1 and 100),
   description text not null default '',
   created_at timestamptz not null default now()
@@ -17,7 +20,7 @@ create table if not exists public.projects (
 
 create table if not exists public.tasks (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users (id) on delete cascade,
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
   project_id uuid not null references public.projects (id) on delete cascade,
   title text not null check (char_length(trim(title)) between 1 and 200),
   -- Дата без времени: «к пятнице» здесь не хранится.
@@ -41,6 +44,18 @@ alter table public.tasks enable row level security;
 -- Читать и менять можно только свои строки. auth.uid() возвращает id того,
 -- кто сейчас вошёл; для неавторизованного посетителя он равен null, поэтому
 -- анонимно не проходит ни одно из правил ниже.
+
+-- Политики создаём через drop + create: так файл можно выполнить повторно.
+-- Раньше повторный запуск падал с ошибкой «policy already exists».
+
+drop policy if exists "projects_select_own" on public.projects;
+drop policy if exists "projects_insert_own" on public.projects;
+drop policy if exists "projects_update_own" on public.projects;
+drop policy if exists "projects_delete_own" on public.projects;
+drop policy if exists "tasks_select_own" on public.tasks;
+drop policy if exists "tasks_insert_own" on public.tasks;
+drop policy if exists "tasks_update_own" on public.tasks;
+drop policy if exists "tasks_delete_own" on public.tasks;
 
 create policy "projects_select_own" on public.projects
   for select to authenticated using (auth.uid() = user_id);
