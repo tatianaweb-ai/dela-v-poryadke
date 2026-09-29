@@ -1,66 +1,10 @@
 import { parseISODate } from "@/lib/date";
-import type { Project, ProjectDraft, Task, TaskDraft, User } from "@/types";
+import type { Project, ProjectDraft, TaskDraft } from "@/types";
 
-export function createId(prefix: string): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `${prefix}_${crypto.randomUUID()}`;
-  }
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
-export function isProject(value: unknown): value is Project {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Record<string, unknown>;
-
-  return (
-    typeof candidate.id === "string" &&
-    typeof candidate.name === "string" &&
-    typeof candidate.description === "string" &&
-    typeof candidate.createdAt === "string"
-  );
-}
-
-export function isTask(value: unknown): value is Task {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Record<string, unknown>;
-
-  return (
-    typeof candidate.id === "string" &&
-    typeof candidate.title === "string" &&
-    typeof candidate.projectId === "string" &&
-    (typeof candidate.deadline === "string" || candidate.deadline === null) &&
-    typeof candidate.done === "boolean" &&
-    typeof candidate.createdAt === "string"
-  );
-}
-
-export function isUser(value: unknown): value is User {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Record<string, unknown>;
-
-  return typeof candidate.name === "string" && candidate.name.trim().length > 0;
-}
-
-/** Десериализаторы бросают ошибку на повреждённых данных — хук откатится к начальному значению. */
-export function parseProjects(raw: string): Project[] {
-  const parsed: unknown = JSON.parse(raw);
-  if (!Array.isArray(parsed)) throw new Error("Ожидался массив проектов");
-  return parsed.filter(isProject);
-}
-
-export function parseTasks(raw: string): Task[] {
-  const parsed: unknown = JSON.parse(raw);
-  if (!Array.isArray(parsed)) throw new Error("Ожидался массив задач");
-  return parsed.filter(isTask);
-}
-
-export function parseUser(raw: string): User | null {
-  const parsed: unknown = JSON.parse(raw);
-  if (parsed === null) return null;
-  if (!isUser(parsed)) throw new Error("Некорректные данные пользователя");
-  return parsed;
-}
-
+/**
+ * Проверки форм. Разбор данных из хранилища больше не нужен: единственный
+ * источник проектов и задач — база, а она отдаёт уже проверенные строки.
+ */
 export function validateProjectDraft(
   draft: ProjectDraft,
   existing: Project[],

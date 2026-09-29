@@ -7,16 +7,26 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
-
-import { useLocalStorage } from "@/hooks/useLocalStorage";
-import { createSeedProjects, createSeedTasks } from "@/lib/seed";
+import {
+  createProject,
+  createTask,
+  deleteAllUserData,
+  deleteProjectRow,
+  deleteTaskRow,
+  fetchProjects,
+  fetchTasks,
+  replaceAllUserData,
+  setTaskDone,
+  updateProjectRow,
+  updateTaskRow,
+} from "@/lib/db/client";
+import { createSeedData } from "@/lib/seed";
 import { displayNameFromEmail, MAX_DISPLAY_NAME_LENGTH, MIN_DISPLAY_NAME_LENGTH } from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/client";
-import { STORAGE_KEYS } from "@/lib/storage-keys";
-import { createId, parseProjects, parseTasks } from "@/lib/validators";
 import type { Project, ProjectDraft, Task, TaskDraft, User } from "@/types";
 
 interface AppStore {
@@ -27,6 +37,8 @@ interface AppStore {
   isReady: boolean;
   /** Человек вошёл, но ещё не назвал себя — показываем экран с именем. */
   needsDisplayName: boolean;
+  /** Текст последней ошибки записи или чтения; интерфейс сам гасит его по таймеру. */
+  dataError: string | null;
   /** Просит Supabase отправить ссылку для входа. */
   requestMagicLink: (email: string) => Promise<{ ok: boolean; error?: string }>;
   saveDisplayName: (name: string) => Promise<void>;
@@ -62,9 +74,6 @@ const NO_PROJECTS: Project[] = [];
 const NO_TASKS: Task[] = [];
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
-  const projectStorage = useLocalStorage<Project[]>(STORAGE_KEYS.projects, NO_PROJECTS, parseProjects);
-  const taskStorage = useLocalStorage<Task[]>(STORAGE_KEYS.tasks, NO_TASKS, parseTasks);
-
   // Кто вошёл — определяет Supabase, а не локальное хранилище: иначе любой мог бы
   // дописать в браузере "dvp:user" и изобразить вход.
   const [authUser, setAuthUser] = useState<SupabaseUser | null>(null);
@@ -116,6 +125,81 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   }, []);
 
+  // Данные живут в базе и приходят вместе с сессией. Пока сессии нет — пустые
+  // массивы и isReady === false, чтобы интерфейс не мигнул демо-данными.
+  const [projects, setProjects] = useState<Project[]>(NO_PROJECTS);
+  const [tasks, setTasks] = useState<Task[]>(NO_TASKS);
+
+  // Готовность и ошибка привязаны к пользователю: не нужно сбрасывать их в
+  // эффекте, достаточно пометить, для кого они актуальны.
+  const [loadedForUserId, setLoadedForUserId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{ userId: string; message: string } | null>(null);
+
+  const userId = authUser?.id ?? null;
+  const userIdRef = useRef<string | null>(null);
+
+  // Ref нужен, чтобы обработчики записи знали, кому принадлежит ошибка,
+  // не меняя свою идентичность (иначе перезагружался бы эффект выше).
+  useEffect(() => {
+    userIdRef.current = userId;
+  }, [userId]);
+
+  // Ошибка записи показывается один раз, как всплывашка, и не блокирует работу.
+  const reportWriteError = useCallback((error: unknown) => {
+    const owner = userIdRef.current;
+    if (!owner) return;
+    const message = error instanceof Error ? error.message : "Неизвестная ошибка";
+    setLoadError({ userId: owner, message: `Не удалось сохранить: ${message}` });
+  }, []);
+
+  const dataError = loadError && loadError.userId === userId ? loadError.message : null;
+
+  useEffect(() => {
+    // Без входа загружать нечего: наружу данные всё равно не отдаются
+    // (см. visibleProjects/visibleTasks ниже).
+    if (!userId) return;
+
+    const supabase = createClient();
+    let active = true;
+
+    (async () => {
+      try {
+        const [loadedProjects, loadedTasks] = await Promise.all([
+          fetchProjects(supabase),
+          fetchTasks(supabase),
+        ]);
+        if (!active) return;
+
+        // База пуста — значит это первый вход. Показываем витрину для демо.
+        if (loadedProjects.length === 0 && loadedTasks.length === 0) {
+          const seed = createSeedData();
+          setProjects(seed.projects);
+          setTasks(seed.tasks);
+          setLoadedForUserId(userId);
+          replaceAllUserData(supabase, seed.projects, seed.tasks).catch(reportWriteError);
+          return;
+        }
+
+        setProjects(loadedProjects);
+        setTasks(loadedTasks);
+        setLoadedForUserId(userId);
+      } catch {
+        if (!active) return;
+        setProjects(NO_PROJECTS);
+        setTasks(NO_TASKS);
+        setLoadedForUserId(userId);
+        setLoadError({
+          userId,
+          message: "Не удалось загрузить данные. Проверьте соединение и обновите страницу.",
+        });
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [userId, reportWriteError]);
+
   // Имя живёт в user_metadata: изменяет его только владелец своей сессии,
   // из кода приложения — никак.
   const displayName = readDisplayName(authUser);
@@ -130,47 +214,67 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const needsDisplayName = Boolean(authUser?.email) && !displayName;
 
-  const isReady = projectStorage.isReady && taskStorage.isReady && isAuthReady;
+  const isReady = isAuthReady && (userId ? loadedForUserId === userId : true);
 
+  // Пока нет входа, наружу не отдаём ничего: чужие данные не должны мигнуть
+  // в интерфейсе ни на одном кадре — даже если смена пользователя быстрая.
+  const visibleProjects = userId ? projects : NO_PROJECTS;
+  const visibleTasks = userId ? tasks : NO_TASKS;
+
+  /**
+   * Оптимистичное обновление: сначала меняем локальное состояние (интерфейс
+   * реагирует мгновенно), затем пишем в базу. При отказе базы возвращаем
+   * прежнее значение — пользователь видит, что действие не удалось.
+   */
   const addProject = useCallback(
     (draft: ProjectDraft) => {
       const project: Project = {
-        id: createId("prj"),
+        id: crypto.randomUUID(),
         name: draft.name.trim(),
         description: draft.description.trim(),
         createdAt: new Date().toISOString(),
       };
-      projectStorage.setValue((previous) => [project, ...previous]);
+      setProjects((previous) => [project, ...previous]);
+      createProject(createClient(), draft, project.id, project.createdAt).catch(reportWriteError);
       return project;
     },
-    [projectStorage],
+    [reportWriteError],
   );
 
   const updateProject = useCallback(
     (id: string, draft: ProjectDraft) => {
-      projectStorage.setValue((previous) =>
-        previous.map((project) =>
+      setProjects((previous) => {
+        const target = previous.find((project) => project.id === id);
+        if (!target) return previous;
+        updateProjectRow(createClient(), id, draft).catch(reportWriteError);
+        return previous.map((project) =>
           project.id === id
             ? { ...project, name: draft.name.trim(), description: draft.description.trim() }
             : project,
-        ),
-      );
+        );
+      });
     },
-    [projectStorage],
+    [reportWriteError],
   );
 
   const deleteProject = useCallback(
     (id: string) => {
-      projectStorage.setValue((previous) => previous.filter((project) => project.id !== id));
-      taskStorage.setValue((previous) => previous.filter((task) => task.projectId !== id));
+      setProjects((previous) => {
+        const target = previous.find((project) => project.id === id);
+        if (!target) return previous;
+        // Оптимистично убираем проект и его задачи: каскад в базе сделает то же.
+        setTasks((current) => current.filter((task) => task.projectId !== id));
+        deleteProjectRow(createClient(), id).catch(reportWriteError);
+        return previous.filter((project) => project.id !== id);
+      });
     },
-    [projectStorage, taskStorage],
+    [reportWriteError],
   );
 
   const addTask = useCallback(
     (draft: TaskDraft) => {
       const task: Task = {
-        id: createId("tsk"),
+        id: crypto.randomUUID(),
         title: draft.title.trim(),
         projectId: draft.projectId,
         deadline: draft.deadline || null,
@@ -178,66 +282,84 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString(),
         completedAt: null,
       };
-      taskStorage.setValue((previous) => [task, ...previous]);
+      setTasks((previous) => [task, ...previous]);
+      createTask(createClient(), draft, task.id, task.createdAt).catch(reportWriteError);
       return task;
     },
-    [taskStorage],
+    [reportWriteError],
   );
 
   const updateTask = useCallback(
     (id: string, draft: TaskDraft) => {
-      taskStorage.setValue((previous) =>
-        previous.map((task) =>
+      setTasks((previous) => {
+        const target = previous.find((task) => task.id === id);
+        if (!target) return previous;
+        updateTaskRow(createClient(), id, draft).catch(reportWriteError);
+        return previous.map((task) =>
           task.id === id
             ? { ...task, title: draft.title.trim(), projectId: draft.projectId, deadline: draft.deadline || null }
             : task,
-        ),
-      );
+        );
+      });
     },
-    [taskStorage],
+    [reportWriteError],
   );
 
   const toggleTask = useCallback(
     (id: string) => {
-      taskStorage.setValue((previous) =>
-        previous.map((task) =>
+      setTasks((previous) => {
+        const target = previous.find((task) => task.id === id);
+        if (!target) return previous;
+        const done = !target.done;
+        setTaskDone(createClient(), id, done).catch(reportWriteError);
+        return previous.map((task) =>
           task.id === id
             ? {
                 ...task,
-                done: !task.done,
-                completedAt: task.done ? null : new Date().toISOString(),
+                done,
+                completedAt: done ? new Date().toISOString() : null,
               }
             : task,
-        ),
-      );
+        );
+      });
     },
-    [taskStorage],
+    [reportWriteError],
   );
 
   const deleteTask = useCallback(
     (id: string) => {
-      taskStorage.setValue((previous) => previous.filter((task) => task.id !== id));
+      setTasks((previous) => {
+        const target = previous.find((task) => task.id === id);
+        if (!target) return previous;
+        deleteTaskRow(createClient(), id).catch(reportWriteError);
+        return previous.filter((task) => task.id !== id);
+      });
     },
-    [taskStorage],
+    [reportWriteError],
   );
 
+  // Витрина для показа: заменяет содержимое целиком, поэтому одна операция в базе.
   const resetDemoData = useCallback(() => {
-    projectStorage.setValue(createSeedProjects());
-    taskStorage.setValue(createSeedTasks());
-  }, [projectStorage, taskStorage]);
+    const seed = createSeedData();
+    setProjects(seed.projects);
+    setTasks(seed.tasks);
+    replaceAllUserData(createClient(), seed.projects, seed.tasks).catch(reportWriteError);
+  }, [reportWriteError]);
 
   const clearAllData = useCallback(() => {
-    projectStorage.setValue([]);
-    taskStorage.setValue([]);
-  }, [projectStorage, taskStorage]);
+    setProjects([]);
+    setTasks([]);
+    deleteAllUserData(createClient()).catch(reportWriteError);
+  }, [reportWriteError]);
 
   const value = useMemo<AppStore>(
     () => ({
       user,
-      projects: projectStorage.value,
-      tasks: taskStorage.value,
+      projects: visibleProjects,
+      tasks: visibleTasks,
       isReady,
       needsDisplayName,
+      dataError,
       requestMagicLink,
       saveDisplayName,
       signOut,
@@ -253,10 +375,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       user,
-      projectStorage.value,
-      taskStorage.value,
+      visibleProjects,
+      visibleTasks,
       isReady,
       needsDisplayName,
+      dataError,
       requestMagicLink,
       saveDisplayName,
       signOut,
@@ -271,18 +394,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       clearAllData,
     ],
   );
-
-  // Первый запуск: если хранилище пустое, наполняем его демо-данными.
-  const projectsCount = projectStorage.value.length;
-  const tasksCount = taskStorage.value.length;
-  const setProjects = projectStorage.setValue;
-  const setTasks = taskStorage.setValue;
-
-  useEffect(() => {
-    if (!isReady) return;
-    if (projectsCount === 0) setProjects(createSeedProjects());
-    if (tasksCount === 0) setTasks(createSeedTasks());
-  }, [isReady, projectsCount, tasksCount, setProjects, setTasks]);
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AuthScreen } from "@/components/AuthScreen";
 import { Dashboard } from "@/components/Dashboard";
@@ -15,7 +15,7 @@ import { useAppStore } from "@/context/AppStore";
 import type { Project, ProjectDraft, Task, TaskDraft, ViewTab } from "@/types";
 
 export function AppShell() {
-  const { user, projects, tasks, needsDisplayName, addProject, updateProject, addTask, updateTask } =
+  const { user, projects, tasks, needsDisplayName, dataError, addProject, updateProject, addTask, updateTask } =
     useAppStore();
   const toast = useToast();
 
@@ -27,6 +27,14 @@ export function AppShell() {
 
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+
+  // Ошибку записи показываем один раз, а не на каждый последующий рендер.
+  const shownErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!dataError || shownErrorRef.current === dataError) return;
+    shownErrorRef.current = dataError;
+    toast.error(dataError);
+  }, [dataError, toast]);
 
   if (!user) return <AuthScreen />;
   if (needsDisplayName) return <NameSetupScreen />;

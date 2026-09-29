@@ -1,78 +1,87 @@
 import { addDays, toISODate } from "@/lib/date";
-import type { Project, Task, User } from "@/types";
+import type { Project, Task } from "@/types";
 
-/** Демо-данные для первого запуска, чтобы интерфейс не выглядел пустым. */
-export function createSeedProjects(): Project[] {
+/**
+ * Демо-данные для первого запуска, чтобы интерфейс не выглядел пустым.
+ *
+ * Идентификаторы настоящие uuid: колонки в базе именно такие, и задачи должны
+ * ссылаться на те же проекты, что получились здесь. Поэтому проекты создаются
+ * первыми, а задачи получают уже готовые id.
+ */
+
+export interface SeedData {
+  projects: Project[];
+  tasks: Task[];
+}
+
+export function createSeedData(): SeedData {
   const now = new Date().toISOString();
 
-  return [
+  const landingId = crypto.randomUUID();
+  const reportsId = crypto.randomUUID();
+
+  const projects: Project[] = [
     {
-      id: "seed-project-1",
+      id: landingId,
       name: "Редизайн лендинга",
       description: "Обновить главную страницу: структура, тексты, адаптив.",
       createdAt: now,
     },
     {
-      id: "seed-project-2",
+      id: reportsId,
       name: "Квартальные отчёты",
       description: "Собрать и сдать отчётность за квартал.",
       createdAt: now,
     },
   ];
-}
 
-export function createSeedTasks(): Task[] {
-  const now = new Date().toISOString();
-
-  return [
+  const tasks: Task[] = [
     {
-      id: "seed-task-1",
+      id: crypto.randomUUID(),
       title: "Собрать структуру главной страницы",
-      projectId: "seed-project-1",
+      projectId: landingId,
       deadline: toISODate(addDays(2)),
       done: false,
       createdAt: now,
       completedAt: null,
     },
     {
-      id: "seed-task-2",
+      id: crypto.randomUUID(),
       title: "Подготовить тексты для блока преимуществ",
-      projectId: "seed-project-1",
+      projectId: landingId,
       deadline: toISODate(addDays(6)),
       done: false,
       createdAt: now,
       completedAt: null,
     },
     {
-      id: "seed-task-3",
+      id: crypto.randomUUID(),
       title: "Сверстать мобильную версию",
-      projectId: "seed-project-1",
+      projectId: landingId,
       deadline: toISODate(addDays(-1)),
       done: false,
       createdAt: now,
       completedAt: null,
     },
     {
-      id: "seed-task-4",
+      id: crypto.randomUUID(),
       title: "Свести показатели по отделу продаж",
-      projectId: "seed-project-2",
+      projectId: reportsId,
       deadline: toISODate(addDays(0)),
       done: false,
       createdAt: now,
       completedAt: null,
     },
     {
-      id: "seed-task-5",
+      id: crypto.randomUUID(),
       title: "Согласовать отчёт с руководителем",
-      projectId: "seed-project-2",
+      projectId: reportsId,
       deadline: toISODate(addDays(10)),
       done: true,
       createdAt: now,
       completedAt: now,
     },
   ];
-}
 
-export function createSeedUser(name: string): User {
-  return { name, createdAt: new Date().toISOString() };
+  return { projects, tasks };
 }
