@@ -1,4 +1,4 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+﻿# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
 /node_modules
@@ -32,8 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-
-# локальная база PGlite (используется, когда не задан DATABASE_URL)
+!.env.example
+# Р»РѕРєР°Р»СЊРЅР°СЏ Р±Р°Р·Р° PGlite (РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ, РєРѕРіРґР° РЅРµ Р·Р°РґР°РЅ DATABASE_URL)
 /.pglite/
 
 # vercel
@@ -43,5 +43,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# логи
+# Р»РѕРіРё
 *.log
+
