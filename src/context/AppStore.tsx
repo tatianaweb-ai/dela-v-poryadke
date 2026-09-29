@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import {
@@ -33,13 +33,15 @@ interface AppStore {
   user: User | null;
   projects: Project[];
   tasks: Task[];
-  /** `false`, пока не прочитаны данные из хранилища и не проверена сессия. */
+  /** `false`, РїРѕРєР° РЅРµ РїСЂРѕС‡РёС‚Р°РЅС‹ РґР°РЅРЅС‹Рµ РёР· С…СЂР°РЅРёР»РёС‰Р° Рё РЅРµ РїСЂРѕРІРµСЂРµРЅР° СЃРµСЃСЃРёСЏ. */
   isReady: boolean;
-  /** Человек вошёл, но ещё не назвал себя — показываем экран с именем. */
+  /** Р§РµР»РѕРІРµРє РІРѕС€С‘Р», РЅРѕ РµС‰С‘ РЅРµ РЅР°Р·РІР°Р» СЃРµР±СЏ вЂ” РїРѕРєР°Р·С‹РІР°РµРј СЌРєСЂР°РЅ СЃ РёРјРµРЅРµРј. */
   needsDisplayName: boolean;
-  /** Текст последней ошибки записи или чтения; интерфейс сам гасит его по таймеру. */
+  /** РўРµРєСЃС‚ РїРѕСЃР»РµРґРЅРµР№ РѕС€РёР±РєРё Р·Р°РїРёСЃРё РёР»Рё С‡С‚РµРЅРёСЏ; РёРЅС‚РµСЂС„РµР№СЃ СЃР°Рј РіР°СЃРёС‚ РµРіРѕ РїРѕ С‚Р°Р№РјРµСЂСѓ. */
   dataError: string | null;
-  /** Просит Supabase отправить ссылку для входа. */
+  /** РџРѕРІС‚РѕСЂСЏРµС‚ Р·Р°РіСЂСѓР·РєСѓ РґР°РЅРЅС‹С…: РєРЅРѕРїРєР° В«РџРѕРІС‚РѕСЂРёС‚СЊВ» РЅР° Р·Р°РіР»СѓС€РєРµ. */
+  reloadData: () => void;
+  /** РџСЂРѕСЃРёС‚ Supabase РѕС‚РїСЂР°РІРёС‚СЊ СЃСЃС‹Р»РєСѓ РґР»СЏ РІС…РѕРґР°. */
   requestMagicLink: (email: string) => Promise<{ ok: boolean; error?: string }>;
   saveDisplayName: (name: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -57,8 +59,8 @@ interface AppStore {
 const AppStoreContext = createContext<AppStore | null>(null);
 
 /**
- * Достаёт имя из user_metadata. Возвращает null, если имя ещё не задано или
- * содержит мусор — тогда приложение попросит его ввести.
+ * Р”РѕСЃС‚Р°С‘С‚ РёРјСЏ РёР· user_metadata. Р’РѕР·РІСЂР°С‰Р°РµС‚ null, РµСЃР»Рё РёРјСЏ РµС‰С‘ РЅРµ Р·Р°РґР°РЅРѕ РёР»Рё
+ * СЃРѕРґРµСЂР¶РёС‚ РјСѓСЃРѕСЂ вЂ” С‚РѕРіРґР° РїСЂРёР»РѕР¶РµРЅРёРµ РїРѕРїСЂРѕСЃРёС‚ РµРіРѕ РІРІРµСЃС‚Рё.
  */
 function readDisplayName(user: SupabaseUser | null): string | null {
   const raw = user?.user_metadata?.display_name;
@@ -69,13 +71,13 @@ function readDisplayName(user: SupabaseUser | null): string | null {
     : null;
 }
 
-/** Стабильные ссылки нужны, чтобы `initialValue` не менял идентичность на каждом рендере. */
+/** РЎС‚Р°Р±РёР»СЊРЅС‹Рµ СЃСЃС‹Р»РєРё РЅСѓР¶РЅС‹, С‡С‚РѕР±С‹ `initialValue` РЅРµ РјРµРЅСЏР» РёРґРµРЅС‚РёС‡РЅРѕСЃС‚СЊ РЅР° РєР°Р¶РґРѕРј СЂРµРЅРґРµСЂРµ. */
 const NO_PROJECTS: Project[] = [];
 const NO_TASKS: Task[] = [];
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
-  // Кто вошёл — определяет Supabase, а не локальное хранилище: иначе любой мог бы
-  // дописать в браузере "dvp:user" и изобразить вход.
+  // РљС‚Рѕ РІРѕС€С‘Р» вЂ” РѕРїСЂРµРґРµР»СЏРµС‚ Supabase, Р° РЅРµ Р»РѕРєР°Р»СЊРЅРѕРµ С…СЂР°РЅРёР»РёС‰Рµ: РёРЅР°С‡Рµ Р»СЋР±РѕР№ РјРѕРі Р±С‹
+  // РґРѕРїРёСЃР°С‚СЊ РІ Р±СЂР°СѓР·РµСЂРµ "dvp:user" Рё РёР·РѕР±СЂР°Р·РёС‚СЊ РІС…РѕРґ.
   const [authUser, setAuthUser] = useState<SupabaseUser | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
 
@@ -104,7 +106,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      // После клика по ссылке из письма браузер вернётся на главную.
+      // РџРѕСЃР»Рµ РєР»РёРєР° РїРѕ СЃСЃС‹Р»РєРµ РёР· РїРёСЃСЊРјР° Р±СЂР°СѓР·РµСЂ РІРµСЂРЅС‘С‚СЃСЏ РЅР° РіР»Р°РІРЅСѓСЋ.
       options: { emailRedirectTo: `${window.location.origin}/` },
     });
 
@@ -125,38 +127,42 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   }, []);
 
-  // Данные живут в базе и приходят вместе с сессией. Пока сессии нет — пустые
-  // массивы и isReady === false, чтобы интерфейс не мигнул демо-данными.
+  // Р”Р°РЅРЅС‹Рµ Р¶РёРІСѓС‚ РІ Р±Р°Р·Рµ Рё РїСЂРёС…РѕРґСЏС‚ РІРјРµСЃС‚Рµ СЃ СЃРµСЃСЃРёРµР№. РџРѕРєР° СЃРµСЃСЃРёРё РЅРµС‚ вЂ” РїСѓСЃС‚С‹Рµ
+  // РјР°СЃСЃРёРІС‹ Рё isReady === false, С‡С‚РѕР±С‹ РёРЅС‚РµСЂС„РµР№СЃ РЅРµ РјРёРіРЅСѓР» РґРµРјРѕ-РґР°РЅРЅС‹РјРё.
   const [projects, setProjects] = useState<Project[]>(NO_PROJECTS);
   const [tasks, setTasks] = useState<Task[]>(NO_TASKS);
 
-  // Готовность и ошибка привязаны к пользователю: не нужно сбрасывать их в
-  // эффекте, достаточно пометить, для кого они актуальны.
+  // Р“РѕС‚РѕРІРЅРѕСЃС‚СЊ Рё РѕС€РёР±РєР° РїСЂРёРІСЏР·Р°РЅС‹ Рє РїРѕР»СЊР·РѕРІР°С‚РµР»СЋ: РЅРµ РЅСѓР¶РЅРѕ СЃР±СЂР°СЃС‹РІР°С‚СЊ РёС… РІ
+  // СЌС„С„РµРєС‚Рµ, РґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїРѕРјРµС‚РёС‚СЊ, РґР»СЏ РєРѕРіРѕ РѕРЅРё Р°РєС‚СѓР°Р»СЊРЅС‹.
   const [loadedForUserId, setLoadedForUserId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<{ userId: string; message: string } | null>(null);
 
   const userId = authUser?.id ?? null;
   const userIdRef = useRef<string | null>(null);
 
-  // Ref нужен, чтобы обработчики записи знали, кому принадлежит ошибка,
-  // не меняя свою идентичность (иначе перезагружался бы эффект выше).
+  // Ref РЅСѓР¶РµРЅ, С‡С‚РѕР±С‹ РѕР±СЂР°Р±РѕС‚С‡РёРєРё Р·Р°РїРёСЃРё Р·РЅР°Р»Рё, РєРѕРјСѓ РїСЂРёРЅР°РґР»РµР¶РёС‚ РѕС€РёР±РєР°,
+  // РЅРµ РјРµРЅСЏСЏ СЃРІРѕСЋ РёРґРµРЅС‚РёС‡РЅРѕСЃС‚СЊ (РёРЅР°С‡Рµ РїРµСЂРµР·Р°РіСЂСѓР¶Р°Р»СЃСЏ Р±С‹ СЌС„С„РµРєС‚ РІС‹С€Рµ).
   useEffect(() => {
     userIdRef.current = userId;
   }, [userId]);
 
-  // Ошибка записи показывается один раз, как всплывашка, и не блокирует работу.
+  // РћС€РёР±РєР° Р·Р°РїРёСЃРё РїРѕРєР°Р·С‹РІР°РµС‚СЃСЏ РѕРґРёРЅ СЂР°Р·, РєР°Рє РІСЃРїР»С‹РІР°С€РєР°, Рё РЅРµ Р±Р»РѕРєРёСЂСѓРµС‚ СЂР°Р±РѕС‚Сѓ.
   const reportWriteError = useCallback((error: unknown) => {
     const owner = userIdRef.current;
     if (!owner) return;
-    const message = error instanceof Error ? error.message : "Неизвестная ошибка";
-    setLoadError({ userId: owner, message: `Не удалось сохранить: ${message}` });
+    const message = error instanceof Error ? error.message : "РќРµРёР·РІРµСЃС‚РЅР°СЏ РѕС€РёР±РєР°";
+    setLoadError({ userId: owner, message: `РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ: ${message}` });
   }, []);
 
   const dataError = loadError && loadError.userId === userId ? loadError.message : null;
 
+  // РџРѕРІС‚РѕСЂ Р·Р°РіСЂСѓР·РєРё: СѓРІРµР»РёС‡РёРІР°РµРј СЃС‡С‘С‚С‡РёРє, Рё СЌС„С„РµРєС‚ РЅРёР¶Рµ РѕС‚СЂР°Р±РѕС‚Р°РµС‚ Р·Р°РЅРѕРІРѕ.
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const reloadData = useCallback(() => setReloadNonce((value) => value + 1), []);
+
   useEffect(() => {
-    // Без входа загружать нечего: наружу данные всё равно не отдаются
-    // (см. visibleProjects/visibleTasks ниже).
+    // Р‘РµР· РІС…РѕРґР° Р·Р°РіСЂСѓР¶Р°С‚СЊ РЅРµС‡РµРіРѕ: РЅР°СЂСѓР¶Сѓ РґР°РЅРЅС‹Рµ РІСЃС‘ СЂР°РІРЅРѕ РЅРµ РѕС‚РґР°СЋС‚СЃСЏ
+    // (СЃРј. visibleProjects/visibleTasks РЅРёР¶Рµ).
     if (!userId) return;
 
     const supabase = createClient();
@@ -164,10 +170,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
     (async () => {
       try {
-        // Без предела ожидания «зависшая» сеть выглядела бы вечной загрузкой.
-        // Лучше честная ошибка, которую можно повторить.
+        // Р‘РµР· РїСЂРµРґРµР»Р° РѕР¶РёРґР°РЅРёСЏ В«Р·Р°РІРёСЃС€Р°СЏВ» СЃРµС‚СЊ РІС‹РіР»СЏРґРµР»Р° Р±С‹ РІРµС‡РЅРѕР№ Р·Р°РіСЂСѓР·РєРѕР№.
+        // Р›СѓС‡С€Рµ С‡РµСЃС‚РЅР°СЏ РѕС€РёР±РєР°, РєРѕС‚РѕСЂСѓСЋ РјРѕР¶РЅРѕ РїРѕРІС‚РѕСЂРёС‚СЊ.
         const timeout = new Promise<never>((_resolve, reject) => {
-          setTimeout(() => reject(new Error("Превышено время ожидания")), 15000);
+          setTimeout(() => reject(new Error("РџСЂРµРІС‹С€РµРЅРѕ РІСЂРµРјСЏ РѕР¶РёРґР°РЅРёСЏ")), 15000);
         });
         const [loadedProjects, loadedTasks] = await Promise.race([
           Promise.all([fetchProjects(supabase), fetchTasks(supabase)]),
@@ -175,7 +181,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         ]);
         if (!active) return;
 
-        // База пуста — значит это первый вход. Показываем витрину для демо.
+        // Р‘Р°Р·Р° РїСѓСЃС‚Р° вЂ” Р·РЅР°С‡РёС‚ СЌС‚Рѕ РїРµСЂРІС‹Р№ РІС…РѕРґ. РџРѕРєР°Р·С‹РІР°РµРј РІРёС‚СЂРёРЅСѓ РґР»СЏ РґРµРјРѕ.
         if (loadedProjects.length === 0 && loadedTasks.length === 0) {
           const seed = createSeedData();
           setProjects(seed.projects);
@@ -195,7 +201,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         setLoadedForUserId(userId);
         setLoadError({
           userId,
-          message: "Не удалось загрузить данные. Проверьте соединение и обновите страницу.",
+          message: "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РґР°РЅРЅС‹Рµ. РџСЂРѕРІРµСЂСЊС‚Рµ СЃРѕРµРґРёРЅРµРЅРёРµ Рё РѕР±РЅРѕРІРёС‚Рµ СЃС‚СЂР°РЅРёС†Сѓ.",
         });
       }
     })();
@@ -203,10 +209,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [userId, reportWriteError]);
+  }, [userId, reportWriteError, reloadNonce]);
 
-  // Имя живёт в user_metadata: изменяет его только владелец своей сессии,
-  // из кода приложения — никак.
+  // РРјСЏ Р¶РёРІС‘С‚ РІ user_metadata: РёР·РјРµРЅСЏРµС‚ РµРіРѕ С‚РѕР»СЊРєРѕ РІР»Р°РґРµР»РµС† СЃРІРѕРµР№ СЃРµСЃСЃРёРё,
+  // РёР· РєРѕРґР° РїСЂРёР»РѕР¶РµРЅРёСЏ вЂ” РЅРёРєР°Рє.
   const displayName = readDisplayName(authUser);
 
   const user = useMemo<User | null>(() => {
@@ -221,15 +227,15 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const isReady = isAuthReady && (userId ? loadedForUserId === userId : true);
 
-  // Пока нет входа, наружу не отдаём ничего: чужие данные не должны мигнуть
-  // в интерфейсе ни на одном кадре — даже если смена пользователя быстрая.
+  // РџРѕРєР° РЅРµС‚ РІС…РѕРґР°, РЅР°СЂСѓР¶Сѓ РЅРµ РѕС‚РґР°С‘Рј РЅРёС‡РµРіРѕ: С‡СѓР¶РёРµ РґР°РЅРЅС‹Рµ РЅРµ РґРѕР»Р¶РЅС‹ РјРёРіРЅСѓС‚СЊ
+  // РІ РёРЅС‚РµСЂС„РµР№СЃРµ РЅРё РЅР° РѕРґРЅРѕРј РєР°РґСЂРµ вЂ” РґР°Р¶Рµ РµСЃР»Рё СЃРјРµРЅР° РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ Р±С‹СЃС‚СЂР°СЏ.
   const visibleProjects = userId ? projects : NO_PROJECTS;
   const visibleTasks = userId ? tasks : NO_TASKS;
 
   /**
-   * Оптимистичное обновление: сначала меняем локальное состояние (интерфейс
-   * реагирует мгновенно), затем пишем в базу. При отказе базы возвращаем
-   * прежнее значение — пользователь видит, что действие не удалось.
+   * РћРїС‚РёРјРёСЃС‚РёС‡РЅРѕРµ РѕР±РЅРѕРІР»РµРЅРёРµ: СЃРЅР°С‡Р°Р»Р° РјРµРЅСЏРµРј Р»РѕРєР°Р»СЊРЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ (РёРЅС‚РµСЂС„РµР№СЃ
+   * СЂРµР°РіРёСЂСѓРµС‚ РјРіРЅРѕРІРµРЅРЅРѕ), Р·Р°С‚РµРј РїРёС€РµРј РІ Р±Р°Р·Сѓ. РџСЂРё РѕС‚РєР°Р·Рµ Р±Р°Р·С‹ РІРѕР·РІСЂР°С‰Р°РµРј
+   * РїСЂРµР¶РЅРµРµ Р·РЅР°С‡РµРЅРёРµ вЂ” РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ РІРёРґРёС‚, С‡С‚Рѕ РґРµР№СЃС‚РІРёРµ РЅРµ СѓРґР°Р»РѕСЃСЊ.
    */
   const addProject = useCallback(
     (draft: ProjectDraft) => {
@@ -267,7 +273,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       setProjects((previous) => {
         const target = previous.find((project) => project.id === id);
         if (!target) return previous;
-        // Оптимистично убираем проект и его задачи: каскад в базе сделает то же.
+        // РћРїС‚РёРјРёСЃС‚РёС‡РЅРѕ СѓР±РёСЂР°РµРј РїСЂРѕРµРєС‚ Рё РµРіРѕ Р·Р°РґР°С‡Рё: РєР°СЃРєР°Рґ РІ Р±Р°Р·Рµ СЃРґРµР»Р°РµС‚ С‚Рѕ Р¶Рµ.
         setTasks((current) => current.filter((task) => task.projectId !== id));
         deleteProjectRow(createClient(), id).catch(reportWriteError);
         return previous.filter((project) => project.id !== id);
@@ -343,7 +349,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [reportWriteError],
   );
 
-  // Витрина для показа: заменяет содержимое целиком, поэтому одна операция в базе.
+  // Р’РёС‚СЂРёРЅР° РґР»СЏ РїРѕРєР°Р·Р°: Р·Р°РјРµРЅСЏРµС‚ СЃРѕРґРµСЂР¶РёРјРѕРµ С†РµР»РёРєРѕРј, РїРѕСЌС‚РѕРјСѓ РѕРґРЅР° РѕРїРµСЂР°С†РёСЏ РІ Р±Р°Р·Рµ.
   const resetDemoData = useCallback(() => {
     const seed = createSeedData();
     setProjects(seed.projects);
@@ -365,6 +371,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       isReady,
       needsDisplayName,
       dataError,
+      reloadData,
       requestMagicLink,
       saveDisplayName,
       signOut,
@@ -385,6 +392,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       isReady,
       needsDisplayName,
       dataError,
+      reloadData,
       requestMagicLink,
       saveDisplayName,
       signOut,
@@ -406,7 +414,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 export function useAppStore(): AppStore {
   const store = useContext(AppStoreContext);
   if (!store) {
-    throw new Error("useAppStore должен вызываться внутри <AppStoreProvider>");
+    throw new Error("useAppStore РґРѕР»Р¶РµРЅ РІС‹Р·С‹РІР°С‚СЊСЃСЏ РІРЅСѓС‚СЂРё <AppStoreProvider>");
   }
   return store;
 }
