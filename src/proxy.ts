@@ -17,6 +17,15 @@ export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const { url, key } = supabaseConfig();
+
+  // Нет cookie сессии — продлевать нечего. Без этой проверки мы делали бы
+  // сетевой запрос к Supabase при каждой загрузке страницы, в том числе у
+  // гостей, и задерживали открытие на сотни миллисекунд.
+  const hasSessionCookie = request.cookies
+    .getAll()
+    .some((cookie) => cookie.name.startsWith("sb-") && cookie.name.includes("auth-token"));
+  if (!hasSessionCookie) return response;
+
   const supabase = createServerClient(url, key, {
     cookies: {
       getAll() {
