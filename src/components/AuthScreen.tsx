@@ -1,38 +1,74 @@
 "use client";
 
-import { ListChecks } from "lucide-react";
+import { ListChecks, MailCheck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Input";
 import { useAppStore } from "@/context/AppStore";
+import { looksLikeEmail } from "@/lib/supabase/auth";
 
-const MIN_NAME_LENGTH = 2;
-const MAX_NAME_LENGTH = 40;
+type SendState = "idle" | "sending" | "sent";
 
 export function AuthScreen() {
-  const { signIn } = useAppStore();
-  const [name, setName] = useState("");
+  const { requestMagicLink } = useAppStore();
+  const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [state, setState] = useState<SendState>("idle");
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const trimmed = name.trim();
+    const trimmed = email.trim();
 
-    if (trimmed.length < MIN_NAME_LENGTH) {
-      setError("Введите имя — минимум 2 символа");
-      return;
-    }
-
-    if (trimmed.length > MAX_NAME_LENGTH) {
-      setError(`Имя не должно быть длиннее ${MAX_NAME_LENGTH} символов`);
+    if (!looksLikeEmail(trimmed)) {
+      setError("Введите почту, например anna@example.com");
       return;
     }
 
     setError(null);
-    signIn(trimmed);
+    setState("sending");
+
+    const result = await requestMagicLink(trimmed);
+    if (!result.ok) {
+      setError(result.error ?? "Не удалось отправить письмо. Попробуйте позже.");
+      setState("idle");
+      return;
+    }
+
+    setState("sent");
   };
+
+  if (state === "sent") {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-4 py-12">
+        <div className="w-full max-w-sm text-center">
+          <div className="mb-8 flex flex-col items-center">
+            <span className="mb-5 flex size-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/25">
+              <MailCheck className="size-7" />
+            </span>
+            <Logo className="text-2xl" />
+          </div>
+
+          <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-7">
+            <h1 className="text-lg font-semibold tracking-tight text-slate-900">
+              Проверьте почту
+            </h1>
+            <p className="text-sm leading-relaxed text-slate-500">
+              Мы отправили ссылку для входа на <span className="font-medium text-slate-700">{email.trim()}</span>.
+              Откройте её — и вы окажетесь в приложении. Пароля нет.
+            </p>
+            <p className="text-xs leading-relaxed text-slate-400">
+              Ссылка дейжит 60 минут. Не нашли письмо? Проверьте папку «Спам» или попробуйте другой адрес.
+            </p>
+            <Button variant="secondary" fullWidth onClick={() => setState("idle")}>
+              Ввести другой адрес
+            </Button>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-4 py-12">
@@ -52,29 +88,32 @@ export function AuthScreen() {
           noValidate
           className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-7"
         >
-          <Field label="Ваше имя" htmlFor="name" error={error ?? undefined} required>
+          <Field label="Электронная почта" htmlFor="email" error={error ?? undefined} required>
             <Input
-              id="name"
-              name="name"
-              autoComplete="name"
+              id="email"
+              name="email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
               autoFocus
-              placeholder="Например, Анна"
-              value={name}
+              placeholder="anna@example.com"
+              value={email}
               invalid={Boolean(error)}
+              disabled={state === "sending"}
               onChange={(event) => {
-                setName(event.target.value);
+                setEmail(event.target.value);
                 if (error) setError(null);
               }}
             />
           </Field>
 
-          <Button type="submit" fullWidth>
-            Войти в приложение
+          <Button type="submit" fullWidth disabled={state === "sending"}>
+            {state === "sending" ? "Отправляем…" : "Получить ссылку для входа"}
           </Button>
         </form>
 
         <p className="mt-5 text-center text-xs leading-relaxed text-slate-400">
-          Данные хранятся только в вашем браузере (LocalStorage) и никуда не отправляются.
+          Пароля нет. Мы отправим письмо со ссылкой — войдёте по ней.
         </p>
       </div>
     </main>

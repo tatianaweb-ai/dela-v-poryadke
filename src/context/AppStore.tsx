@@ -1,33 +1,33 @@
 "use client";
 
+import type { User as SupabaseUser } from "@supabase/supabase-js";
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
+  useState,
   type ReactNode,
 } from "react";
 
 import { useLocalStorage } from "@/hooks/useLocalStorage";
-import { createSeedProjects, createSeedTasks, createSeedUser } from "@/lib/seed";
+import { createSeedProjects, createSeedTasks } from "@/lib/seed";
+import { displayNameFromEmail } from "@/lib/supabase/auth";
+import { createClient } from "@/lib/supabase/client";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
-import {
-  createId,
-  parseProjects,
-  parseTasks,
-  parseUser,
-} from "@/lib/validators";
+import { createId, parseProjects, parseTasks } from "@/lib/validators";
 import type { Project, ProjectDraft, Task, TaskDraft, User } from "@/types";
 
 interface AppStore {
   user: User | null;
   projects: Project[];
   tasks: Task[];
-  /** `false`, пока данные не прочитаны из LocalStorage. */
+  /** `false`, пока не прочитаны данные из хранилища и не проверена сессия. */
   isReady: boolean;
-  signIn: (name: string) => void;
-  signOut: () => void;
+  /** Просит Supabase отправить ссылку для входа. */
+  requestMagicLink: (email: string) => Promise<{ ok: boolean; error?: string }>;
+  signOut: () => Promise<void>;
   addProject: (draft: ProjectDraft) => Project;
   updateProject: (id: string, draft: ProjectDraft) => void;
   deleteProject: (id: string) => void;
@@ -44,27 +44,63 @@ const AppStoreContext = createContext<AppStore | null>(null);
 /** Стабильные ссылки нужны, чтобы `initialValue` не менял идентичность на каждом рендере. */
 const NO_PROJECTS: Project[] = [];
 const NO_TASKS: Task[] = [];
-const NO_USER: User | null = null;
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
-  const userStorage = useLocalStorage<User | null>(STORAGE_KEYS.user, NO_USER, parseUser);
   const projectStorage = useLocalStorage<Project[]>(STORAGE_KEYS.projects, NO_PROJECTS, parseProjects);
   const taskStorage = useLocalStorage<Task[]>(STORAGE_KEYS.tasks, NO_TASKS, parseTasks);
 
-  const isReady = userStorage.isReady && projectStorage.isReady && taskStorage.isReady;
+  // Кто вошёл — определяет Supabase, а не локальное хранилище: иначе любой мог бы
+  // дописать в браузере "dvp:user" и изобразить вход.
+  const [authUser, setAuthUser] = useState<SupabaseUser | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
-  const signIn = useCallback(
-    (name: string) => {
-      const trimmed = name.trim();
-      if (!trimmed) return;
-      userStorage.setValue(createSeedUser(trimmed));
-    },
-    [userStorage],
-  );
+  useEffect(() => {
+    const supabase = createClient();
+    let active = true;
 
-  const signOut = useCallback(() => {
-    userStorage.setValue(null);
-  }, [userStorage]);
+    supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
+      setAuthUser(data.user ?? null);
+      setIsAuthReady(true);
+    });
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthUser(session?.user ?? null);
+      setIsAuthReady(true);
+    });
+
+    return () => {
+      active = false;
+      subscription.subscription.unsubscribe();
+    };
+  }, []);
+
+  const requestMagicLink = useCallback(async (email: string) => {
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      // После клика по ссылке из письма браузер вернётся на главную.
+      options: { emailRedirectTo: `${window.location.origin}/` },
+    });
+
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }, []);
+
+  const signOut = useCallback(async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+  }, []);
+
+  const user = useMemo<User | null>(() => {
+    if (!authUser?.email) return null;
+    return {
+      name: displayNameFromEmail(authUser.email),
+      createdAt: authUser.created_at ?? new Date().toISOString(),
+    };
+  }, [authUser]);
+
+  const isReady = projectStorage.isReady && taskStorage.isReady && isAuthReady;
 
   const addProject = useCallback(
     (draft: ProjectDraft) => {
@@ -167,11 +203,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppStore>(
     () => ({
-      user: userStorage.value,
+      user,
       projects: projectStorage.value,
       tasks: taskStorage.value,
       isReady,
-      signIn,
+      requestMagicLink,
       signOut,
       addProject,
       updateProject,
@@ -184,11 +220,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       clearAllData,
     }),
     [
-      userStorage.value,
+      user,
       projectStorage.value,
       taskStorage.value,
       isReady,
-      signIn,
+      requestMagicLink,
       signOut,
       addProject,
       updateProject,
