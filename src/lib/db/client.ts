@@ -99,14 +99,13 @@ export async function createProject(
   draft: ProjectDraft,
   id: string,
   createdAt: string,
-): Promise<Project> {
-  const { data, error } = await supabase
+): Promise<void> {
+  // Не просим вернуть вставленную строку: id и createdAt уже известны, а
+  // RETURNING без нужды добавляет ещё одну причину упасть (пустой ответ).
+  const { error } = await supabase
     .from("projects")
-    .insert({ id, name: draft.name.trim(), description: draft.description.trim(), created_at: createdAt })
-    .returns<ProjectRow>()
-    .single();
+    .insert({ id, name: draft.name.trim(), description: draft.description.trim(), created_at: createdAt });
   if (error) throw error;
-  return toProject(data);
 }
 
 export async function updateProjectRow(
@@ -132,8 +131,8 @@ export async function createTask(
   draft: TaskDraft,
   id: string,
   createdAt: string,
-): Promise<Task> {
-  const { data, error } = await supabase
+): Promise<void> {
+  const { error } = await supabase
     .from("tasks")
     .insert({
       id,
@@ -141,11 +140,8 @@ export async function createTask(
       project_id: draft.projectId,
       deadline: draft.deadline || null,
       created_at: createdAt,
-    })
-    .returns<TaskRow>()
-    .single();
+    });
   if (error) throw error;
-  return toTask(data);
 }
 
 export async function updateTaskRow(
