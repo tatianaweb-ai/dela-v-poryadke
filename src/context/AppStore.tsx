@@ -56,6 +56,25 @@ interface AppStore {
   clearAllData: () => void;
 }
 
+/**
+ * Ошибки Supabase — не экземпляры Error, а обычные объекты с полями
+ * message/code/details. Проверка только через instanceof молча теряла бы текст
+ * и подставляла «Неизвестная ошибка» именно там, где причина нужнее всего.
+ */
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null) {
+    const candidate = error as { message?: unknown; code?: unknown };
+    if (typeof candidate.message === "string" && candidate.message) return candidate.message;
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "неизвестный формат ошибки";
+    }
+  }
+  return String(error);
+}
+
 const AppStoreContext = createContext<AppStore | null>(null);
 
 /**
@@ -150,7 +169,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const reportWriteError = useCallback((error: unknown) => {
     const owner = userIdRef.current;
     if (!owner) return;
-    const message = error instanceof Error ? error.message : "Неизвестная ошибка";
+    const message = errorMessage(error);
     // В консоль браузера: всплывашка живёт несколько секунд, а причина нужна
     // в логе сервера, где её можно прочитать целиком.
     console.error("[db] не удалось сохранить:", message, error);
