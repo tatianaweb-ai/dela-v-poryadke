@@ -46,3 +46,7 @@ next-env.d.ts
 # Р»РѕРіРё
 *.log
 
+
+# internal case notes (budget, order links) - kept locally only
+info/
+
