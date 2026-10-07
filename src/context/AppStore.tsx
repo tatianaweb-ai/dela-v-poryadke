@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import {
@@ -39,6 +40,8 @@ interface AppStore {
   needsDisplayName: boolean;
   /** РўРµРєСЃС‚ РїРѕСЃР»РµРґРЅРµР№ РѕС€РёР±РєРё Р·Р°РїРёСЃРё РёР»Рё С‡С‚РµРЅРёСЏ; РёРЅС‚РµСЂС„РµР№СЃ СЃР°Рј РіР°СЃРёС‚ РµРіРѕ РїРѕ С‚Р°Р№РјРµСЂСѓ. */
   dataError: string | null;
+  /** Причина неудавшегося входа из ссылки: без неё приложение молча возвращало экран входа. */
+  authNotice: string | null;
   /** РџРѕРІС‚РѕСЂСЏРµС‚ Р·Р°РіСЂСѓР·РєСѓ РґР°РЅРЅС‹С…: РєРЅРѕРїРєР° В«РџРѕРІС‚РѕСЂРёС‚СЊВ» РЅР° Р·Р°РіР»СѓС€РєРµ. */
   reloadData: () => void;
   /** РџСЂРѕСЃРёС‚ Supabase РѕС‚РїСЂР°РІРёС‚СЊ СЃСЃС‹Р»РєСѓ РґР»СЏ РІС…РѕРґР°. */
@@ -94,6 +97,37 @@ function readDisplayName(user: SupabaseUser | null): string | null {
 const NO_PROJECTS: Project[] = [];
 const NO_TASKS: Task[] = [];
 
+/** Ссылка из письма не меняется сама — подписываться не на что. */
+function subscribeToNothing(): () => void {
+  return () => {};
+}
+
+function getEmptyAuthNotice(): string | null {
+  return null;
+}
+
+/**
+ * Причина неудавшегося входа.
+ *
+ * Supabase кладёт её и в query, и в hash, поэтому смотрим оба места: раньше
+ * приложение молча возвращало на экран входа, и причина была не видна.
+ */
+function readAuthNotice(): string | null {
+  if (typeof window === "undefined") return null;
+
+  const query = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const code = query.get("error_code") ?? hash.get("error_code");
+  if (!code) return null;
+
+  if (code === "otp_expired") {
+    return "Ссылка устарела или уже использована. Запросите новую — она приходит сразу.";
+  }
+
+  const description = query.get("error_description") ?? hash.get("error_description");
+  return description ?? "Не удалось войти. Запросите новую ссылку.";
+}
+
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   // РљС‚Рѕ РІРѕС€С‘Р» вЂ” РѕРїСЂРµРґРµР»СЏРµС‚ Supabase, Р° РЅРµ Р»РѕРєР°Р»СЊРЅРѕРµ С…СЂР°РЅРёР»РёС‰Рµ: РёРЅР°С‡Рµ Р»СЋР±РѕР№ РјРѕРі Р±С‹
   // РґРѕРїРёСЃР°С‚СЊ РІ Р±СЂР°СѓР·РµСЂРµ "dvp:user" Рё РёР·РѕР±СЂР°Р·РёС‚СЊ РІС…РѕРґ.
@@ -121,7 +155,20 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Supabase возвращает причину неудачи в параметрах адреса. Читаем их как
+  // внешнее состояние: значение меняется только при переходе по ссылке из
+  // письма, а setState внутри эффекта здесь запрещён правилами линтера.
+  const authNotice = useSyncExternalStore(
+    subscribeToNothing,
+    readAuthNotice,
+    getEmptyAuthNotice,
+  );
+
   const requestMagicLink = useCallback(async (email: string) => {
+    // Причина прошлой неудачи лежит в адресе — убираем её, как только
+    // пользователь просит новую ссылку.
+    window.history.replaceState(null, "", window.location.pathname);
+
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
@@ -393,6 +440,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       isReady,
       needsDisplayName,
       dataError,
+      authNotice,
       reloadData,
       requestMagicLink,
       saveDisplayName,
@@ -414,6 +462,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       isReady,
       needsDisplayName,
       dataError,
+      authNotice,
       reloadData,
       requestMagicLink,
       saveDisplayName,

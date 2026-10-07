@@ -12,7 +12,7 @@ import { looksLikeEmail } from "@/lib/supabase/auth";
 type SendState = "idle" | "sending" | "sent";
 
 export function AuthScreen() {
-  const { requestMagicLink } = useAppStore();
+  const { requestMagicLink, authNotice } = useAppStore();
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<SendState>("idle");
@@ -82,6 +82,15 @@ export function AuthScreen() {
             Проекты, задачи и дедлайны — в одном месте
           </p>
         </div>
+
+        {authNotice && (
+          <div
+            role="alert"
+            className="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900"
+          >
+            {authNotice}
+          </div>
+        )}
 
         <form
           onSubmit={handleSubmit}
