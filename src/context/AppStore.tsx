@@ -52,6 +52,12 @@ interface AppStore {
   reloadData: () => void;
   /** Вход или регистрация по паролю. Письма не отправляются вообще. */
   signIn: (email: string, password: string, mode: AuthMode) => Promise<{ ok: boolean; error?: string }>;
+  /** Отправляет письмо со ссылкой для смены пароля. */
+  resetPassword: (email: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Сохраняет новый пароль после перехода по ссылке из письма. */
+  setNewPassword: (password: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Человек пришёл по ссылке «сбросить пароль» — нужно задать новый. */
+  needsPasswordReset: boolean;
   saveDisplayName: (name: string) => Promise<void>;
   signOut: () => Promise<void>;
   addProject: (draft: ProjectDraft) => Project;
@@ -160,6 +166,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   // РґРѕРїРёСЃР°С‚СЊ РІ Р±СЂР°СѓР·РµСЂРµ "dvp:user" Рё РёР·РѕР±СЂР°Р·РёС‚СЊ РІС…РѕРґ.
   const [authUser, setAuthUser] = useState<SupabaseUser | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  // Снимается только после сохранения нового пароля: промежуточные события
+  // (обновление токена и т.п.) не должны выбрасывать человека из этого режима.
+  const [needsPasswordReset, setNeedsPasswordReset] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -171,9 +180,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       setIsAuthReady(true);
     });
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
       setAuthUser(session?.user ?? null);
       setIsAuthReady(true);
+      if (event === "PASSWORD_RECOVERY") setNeedsPasswordReset(true);
     });
 
     return () => {
@@ -222,6 +232,33 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  const resetPassword = useCallback(async (email: string) => {
+    const supabase = createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/`,
+    });
+
+    if (error) {
+      console.error("[auth] не удалось отправить письмо для смены пароля:", error.message);
+      return { ok: false, error: humanizeAuthError(error.message) };
+    }
+
+    return { ok: true };
+  }, []);
+
+  const setNewPassword = useCallback(async (password: string) => {
+    const supabase = createClient();
+    const { error } = await supabase.auth.updateUser({ password });
+
+    if (error) {
+      console.error("[auth] не удалось сохранить новый пароль:", error.message);
+      return { ok: false, error: humanizeAuthError(error.message) };
+    }
+
+    setNeedsPasswordReset(false);
+    return { ok: true };
+  }, []);
 
   const saveDisplayName = useCallback(async (name: string) => {
     const supabase = createClient();
@@ -490,6 +527,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       authNotice,
       reloadData,
       signIn,
+      resetPassword,
+      setNewPassword,
+      needsPasswordReset,
       saveDisplayName,
       signOut,
       addProject,
@@ -512,6 +552,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       authNotice,
       reloadData,
       signIn,
+      resetPassword,
+      setNewPassword,
+      needsPasswordReset,
       saveDisplayName,
       signOut,
       addProject,

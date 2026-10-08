@@ -30,6 +30,7 @@ export function humanizeAuthError(message: string): string {
 
   if (text.includes("invalid login credentials")) return "Неверная почта или пароль.";
   if (text.includes("already registered")) return "Такая почта уже зарегистрирована — войдите по паролю.";
+  if (text.includes("different from")) return "Новый пароль должен отличаться от старого.";
   if (text.includes("email not confirmed")) {
     return "Почта не подтверждена. Проверьте входящие и папку «Спам».";
   }

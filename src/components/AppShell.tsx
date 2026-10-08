@@ -8,6 +8,7 @@ import { Header } from "@/components/Header";
 import { NameSetupScreen } from "@/components/NameSetupScreen";
 import { ProjectList } from "@/components/ProjectList";
 import { ProjectModal } from "@/components/ProjectModal";
+import { ResetPasswordScreen } from "@/components/ResetPasswordScreen";
 import { TaskList } from "@/components/TaskList";
 import { TaskModal } from "@/components/TaskModal";
 import { useToast } from "@/components/ui/Toast";
@@ -15,7 +16,7 @@ import { useAppStore } from "@/context/AppStore";
 import type { Project, ProjectDraft, Task, TaskDraft, ViewTab } from "@/types";
 
 export function AppShell() {
-  const { user, projects, tasks, needsDisplayName, dataError, addProject, updateProject, addTask, updateTask } =
+  const { user, projects, tasks, needsDisplayName, needsPasswordReset, dataError, addProject, updateProject, addTask, updateTask } =
     useAppStore();
   const toast = useToast();
 
@@ -37,6 +38,7 @@ export function AppShell() {
   }, [dataError, toast]);
 
   if (!user) return <AuthScreen />;
+  if (needsPasswordReset) return <ResetPasswordScreen />;
   if (needsDisplayName) return <NameSetupScreen />;
 
   const handleOpenTaskCreate = () => {

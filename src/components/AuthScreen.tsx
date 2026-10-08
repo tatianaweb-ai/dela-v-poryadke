@@ -10,13 +10,15 @@ import { useAppStore } from "@/context/AppStore";
 import { looksLikeEmail, MIN_PASSWORD_LENGTH, type AuthMode } from "@/lib/supabase/auth";
 
 export function AuthScreen() {
-  const { signIn, authNotice } = useAppStore();
+  const { signIn, resetPassword, authNotice } = useAppStore();
   const [mode, setMode] = useState<AuthMode>("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [resetPending, setResetPending] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   const switchMode = (next: AuthMode) => {
     setMode(next);
@@ -50,6 +52,28 @@ export function AuthScreen() {
 
   const notice = error ?? authNotice;
 
+  const handleForgotPassword = async () => {
+    const trimmed = email.trim();
+
+    if (!looksLikeEmail(trimmed)) {
+      setError("Введите почту — письмо придёт именно на неё");
+      return;
+    }
+
+    setError(null);
+    setResetPending(true);
+
+    const result = await resetPassword(trimmed);
+    setResetPending(false);
+
+    if (!result.ok) {
+      setError(result.error ?? "Не удалось отправить письмо. Попробуйте позже.");
+      return;
+    }
+
+    setResetSent(true);
+  };
+
   return (
     <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-4 py-12">
       <div className="w-full max-w-sm">
@@ -69,6 +93,16 @@ export function AuthScreen() {
             className="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900"
           >
             {notice}
+          </div>
+        )}
+
+        {resetSent && (
+          <div
+            role="status"
+            className="mb-5 rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm leading-relaxed text-emerald-900"
+          >
+            Письмо отправлено на <span className="font-medium">{email.trim()}</span>. Откройте ссылку
+            из него — она откроет экран нового пароля.
           </div>
         )}
 
@@ -137,6 +171,19 @@ export function AuthScreen() {
                 : "Войти"}
           </Button>
         </form>
+
+        {mode === "sign-in" && (
+          <p className="mt-4 text-center">
+            <button
+              type="button"
+              disabled={pending || resetPending}
+              onClick={() => void handleForgotPassword()}
+              className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800 disabled:opacity-50"
+            >
+              {resetPending ? "Отправляем письмо…" : "Забыли пароль?"}
+            </button>
+          </p>
+        )}
 
         <p className="mt-5 text-center text-sm text-slate-500">
           {mode === "sign-in" ? "Ещё нет аккаунта?" : "Уже есть аккаунт?"}{" "}
