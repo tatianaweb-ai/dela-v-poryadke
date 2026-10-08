@@ -134,6 +134,27 @@ function readAuthNotice(): string | null {
   return description ?? "Не удалось войти. Попробуйте ещё раз.";
 }
 
+/**
+ * Разовый сбой сети не должен оставлять человеку пустой экран с плашкой:
+ * пробуем ещё раз, и только если снова не вышло — отдаём ошибку наверх.
+ */
+async function withRetry<T>(run: () => Promise<T>, attempts = 2, delayMs = 1500): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   // РљС‚Рѕ РІРѕС€С‘Р» вЂ” РѕРїСЂРµРґРµР»СЏРµС‚ Supabase, Р° РЅРµ Р»РѕРєР°Р»СЊРЅРѕРµ С…СЂР°РЅРёР»РёС‰Рµ: РёРЅР°С‡Рµ Р»СЋР±РѕР№ РјРѕРі Р±С‹
   // РґРѕРїРёСЃР°С‚СЊ РІ Р±СЂР°СѓР·РµСЂРµ "dvp:user" Рё РёР·РѕР±СЂР°Р·РёС‚СЊ РІС…РѕРґ.
@@ -261,15 +282,19 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
     (async () => {
       try {
-        // Р‘РµР· РїСЂРµРґРµР»Р° РѕР¶РёРґР°РЅРёСЏ В«Р·Р°РІРёСЃС€Р°СЏВ» СЃРµС‚СЊ РІС‹РіР»СЏРґРµР»Р° Р±С‹ РІРµС‡РЅРѕР№ Р·Р°РіСЂСѓР·РєРѕР№.
-        // Р›СѓС‡С€Рµ С‡РµСЃС‚РЅР°СЏ РѕС€РёР±РєР°, РєРѕС‚РѕСЂСѓСЋ РјРѕР¶РЅРѕ РїРѕРІС‚РѕСЂРёС‚СЊ.
-        const timeout = new Promise<never>((_resolve, reject) => {
-          setTimeout(() => reject(new Error("РџСЂРµРІС‹С€РµРЅРѕ РІСЂРµРјСЏ РѕР¶РёРґР°РЅРёСЏ")), 15000);
-        });
-        const [loadedProjects, loadedTasks] = await Promise.race([
-          Promise.all([fetchProjects(supabase), fetchTasks(supabase)]),
-          timeout,
-        ]);
+        // Без предела ожидания «зависшая» сеть выглядела бы вечной загрузкой.
+        // Повторяем один раз: разовый сбой не должен оставлять пустой экран.
+        const load = () => {
+          const attempt = new Promise<never>((_resolve, reject) => {
+            setTimeout(() => reject(new Error("Превышено время ожидания")), 15000);
+          });
+          return Promise.race([
+            Promise.all([fetchProjects(supabase), fetchTasks(supabase)]),
+            attempt,
+          ]);
+        };
+
+        const [loadedProjects, loadedTasks] = await withRetry(load);
         if (!active) return;
 
         // Р‘Р°Р·Р° РїСѓСЃС‚Р° вЂ” Р·РЅР°С‡РёС‚ СЌС‚Рѕ РїРµСЂРІС‹Р№ РІС…РѕРґ. РџРѕРєР°Р·С‹РІР°РµРј РІРёС‚СЂРёРЅСѓ РґР»СЏ РґРµРјРѕ.
