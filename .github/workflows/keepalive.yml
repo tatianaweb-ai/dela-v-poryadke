@@ -1,0 +1,19 @@
+name: Keep Supabase awake
+
+on:
+  schedule:
+    # Раз в сутки. Supabase ставит бесплатный проект на паузу после 7 дней
+    # без запросов к базе — этот запрос не даёт этому случиться.
+    - cron: "23 6 * * *"
+  # Ручной запуск со вкладки Actions — удобно для проверки.
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query the database once
+        # При переезде хостинга (например, на Vercel) поменять адрес здесь.
+        run: |
+          curl --fail --silent --show-error --max-time 60 \
+            "https://dela-v-poryadke-production.up.railway.app/api/keepalive"
