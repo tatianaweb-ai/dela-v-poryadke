@@ -26,7 +26,13 @@ import {
   updateTaskRow,
 } from "@/lib/db/client";
 import { createSeedData } from "@/lib/seed";
-import { displayNameFromEmail, MAX_DISPLAY_NAME_LENGTH, MIN_DISPLAY_NAME_LENGTH } from "@/lib/supabase/auth";
+import {
+  displayNameFromEmail,
+  humanizeAuthError,
+  MAX_DISPLAY_NAME_LENGTH,
+  MIN_DISPLAY_NAME_LENGTH,
+  type AuthMode,
+} from "@/lib/supabase/auth";
 import { createClient } from "@/lib/supabase/client";
 import type { Project, ProjectDraft, Task, TaskDraft, User } from "@/types";
 
@@ -44,8 +50,8 @@ interface AppStore {
   authNotice: string | null;
   /** РџРѕРІС‚РѕСЂСЏРµС‚ Р·Р°РіСЂСѓР·РєСѓ РґР°РЅРЅС‹С…: РєРЅРѕРїРєР° В«РџРѕРІС‚РѕСЂРёС‚СЊВ» РЅР° Р·Р°РіР»СѓС€РєРµ. */
   reloadData: () => void;
-  /** РџСЂРѕСЃРёС‚ Supabase РѕС‚РїСЂР°РІРёС‚СЊ СЃСЃС‹Р»РєСѓ РґР»СЏ РІС…РѕРґР°. */
-  requestMagicLink: (email: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Вход или регистрация по паролю. Письма не отправляются вообще. */
+  signIn: (email: string, password: string, mode: AuthMode) => Promise<{ ok: boolean; error?: string }>;
   saveDisplayName: (name: string) => Promise<void>;
   signOut: () => Promise<void>;
   addProject: (draft: ProjectDraft) => Project;
@@ -121,11 +127,11 @@ function readAuthNotice(): string | null {
   if (!code) return null;
 
   if (code === "otp_expired") {
-    return "Ссылка устарела или уже использована. Запросите новую — она приходит сразу.";
+    return "Это ссылка из старого письма — она больше не работает. Войдите по паролю.";
   }
 
   const description = query.get("error_description") ?? hash.get("error_description");
-  return description ?? "Не удалось войти. Запросите новую ссылку.";
+  return description ?? "Не удалось войти. Попробуйте ещё раз.";
 }
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
@@ -164,21 +170,37 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     getEmptyAuthNotice,
   );
 
-  const requestMagicLink = useCallback(async (email: string) => {
-    // Причина прошлой неудачи лежит в адресе — убираем её, как только
-    // пользователь просит новую ссылку.
-    window.history.replaceState(null, "", window.location.pathname);
+  const signIn = useCallback(
+    async (email: string, password: string, mode: AuthMode) => {
+      // Причина прошлой неудачи лежит в адресе — убираем её при новом входе.
+      window.history.replaceState(null, "", window.location.pathname);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      // РџРѕСЃР»Рµ РєР»РёРєР° РїРѕ СЃСЃС‹Р»РєРµ РёР· РїРёСЃСЊРјР° Р±СЂР°СѓР·РµСЂ РІРµСЂРЅС‘С‚СЃСЏ РЅР° РіР»Р°РІРЅСѓСЋ.
-      options: { emailRedirectTo: `${window.location.origin}/` },
-    });
+      const supabase = createClient();
+      const mail = email.trim();
 
-    if (error) return { ok: false, error: error.message };
-    return { ok: true };
-  }, []);
+      const { data, error } =
+        mode === "sign-up"
+          ? await supabase.auth.signUp({ email: mail, password })
+          : await supabase.auth.signInWithPassword({ email: mail, password });
+
+      if (error) {
+        console.error("[auth] не удалось войти:", error.message);
+        return { ok: false, error: humanizeAuthError(error.message) };
+      }
+
+      // Подтверждение почты включено: аккаунт уже создан, но сессии нет —
+      // по паролю войти пока нельзя.
+      if (mode === "sign-up" && !data.session) {
+        return {
+          ok: false,
+          error: "Аккаунт создан. Подтвердите почту по ссылке из письма и вернитесь — тогда войдёте по паролю.",
+        };
+      }
+
+      return { ok: true };
+    },
+    [],
+  );
 
   const saveDisplayName = useCallback(async (name: string) => {
     const supabase = createClient();
@@ -442,7 +464,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       dataError,
       authNotice,
       reloadData,
-      requestMagicLink,
+      signIn,
       saveDisplayName,
       signOut,
       addProject,
@@ -464,7 +486,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       dataError,
       authNotice,
       reloadData,
-      requestMagicLink,
+      signIn,
       saveDisplayName,
       signOut,
       addProject,
