@@ -13,7 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Query the database once
-        # При переезде хостинга (например, на Vercel) поменять адрес здесь.
+        # Ходим напрямую в Supabase, а не через приложение: если хостинг
+        # недоступен, база всё равно получит запрос и не уснёт.
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           curl --fail --silent --show-error --max-time 60 \
-            "https://dela-v-poryadke-production.up.railway.app/api/keepalive"
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            "${SUPABASE_URL}/rest/v1/projects?select=id&limit=1"
